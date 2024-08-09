@@ -137,6 +137,25 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Event listeners
+  document
+    .getElementById("llm-select")
+    .addEventListener("change", async (e) => {
+      const llm = e.target.value;
+      try {
+        const response = await fetch("/switch_llm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ llm }),
+        });
+        if (!response.ok) throw new Error("Failed to switch LLM");
+        const data = await response.json();
+        displayMessage("assistant", data.message);
+      } catch (error) {
+        console.error("Error switching LLM:", error);
+        displayMessage("assistant", `Failed to switch LLM: ${error.message}`);
+      }
+    });
+
   sendBtn.addEventListener("click", () => {
     const message = userInput.value.trim();
     if (message || selectedFiles.length > 0) {
