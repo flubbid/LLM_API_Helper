@@ -169,24 +169,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // document
-  //   .getElementById("model-select")
-  //   .addEventListener("change", async (e) => {
-  //     const llm = e.target.value;
-  //     try {
-  //       const response = await fetch("/switch_llm", {
-  //         method: "POST",
-  //         headers: { "Content-Type": "application/json" },
-  //         body: JSON.stringify({ llm }),
-  //       });
-  //       if (!response.ok) throw new Error("Failed to switch LLM");
-  //       const data = await response.json();
-  //       displayMessage("assistant", data.message);
-  //     } catch (error) {
-  //       console.error("Error switching LLM:", error);
-  //       displayMessage("assistant", `Failed to switch LLM: ${error.message}`);
-  //     }
-  //   });
+  clearHistoryBtn.addEventListener("click", async () => {
+    try {
+      const response = await fetch("/new_conversation", { method: "POST" });
+      if (response.ok) {
+        const data = await response.json();
+        chatContainer.innerHTML = "";
+        displayMessage("assistant", data.message);
+      } else {
+        throw new Error("Failed to start new conversation");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      displayMessage(
+        "assistant",
+        "Failed to start a new conversation. Please try again."
+      );
+    }
+  });
 
   sendBtn.addEventListener("click", () => {
     const message = userInput.value.trim();
