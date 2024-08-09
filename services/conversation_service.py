@@ -3,6 +3,10 @@ class ConversationService:
         self.llm_service = llm_service
         self.file_service = file_service
         self.conversation_history = []
+    
+    def new_conversation(self):
+        self.conversation_history = []
+        return {"message": "New conversation started"}
 
     def process_message(self, message, files):
         print(f"Processing message: {message}")  # Add this log
