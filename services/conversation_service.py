@@ -5,6 +5,7 @@ class ConversationService:
         self.conversation_history = []
 
     def process_message(self, message, files):
+        print(f"Processing message: {message}")  # Add this log
         user_content = [{"type": "text", "text": message}]
 
         for file in files:
@@ -15,6 +16,7 @@ class ConversationService:
         self.conversation_history.append({"role": "user", "content": user_content})
 
         assistant_message = self.llm_service.call_llm(self.conversation_history)
+        print(f"LLM response: {assistant_message}")  # Add this log
         
         if assistant_message:
             # Ensure assistant_message is a string
@@ -26,6 +28,7 @@ class ConversationService:
             self.conversation_history.append({"role": "assistant", "content": [{"type": "text", "text": assistant_message}]})
             return assistant_message
         else:
+            print("Failed to get response from LLM")  # Add this log
             return {'error': 'Failed to get response from LLM'}
 
     def export_chat(self):

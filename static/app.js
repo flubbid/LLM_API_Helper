@@ -12,6 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeSettingsBtn = document.getElementById("close-settings");
   const fontSizeSlider = document.getElementById("font-size");
   const languageSelect = document.getElementById("language");
+  const modelSelect = document.getElementById("model-select");
+  initializeModelSelect();
   let selectedFiles = [];
 
   // File handling functions
@@ -90,18 +92,27 @@ document.addEventListener("DOMContentLoaded", () => {
   // API communication
   async function sendMessage(message) {
     try {
+      console.log("Sending message:", message); // Add this log
+      console.log("Selected model:", modelSelect.value); // Add this log
       const fileData = await Promise.all(selectedFiles.map(handleFileUpload));
       const response = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, files: fileData }),
+        body: JSON.stringify({
+          message,
+          files: fileData,
+          model: modelSelect.value,
+        }),
       });
+
+      console.log("Response status:", response.status); // Add this log
 
       if (!response.ok) {
         throw new Error(`Server error: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log("Received data:", data); // Add this log
       displayMessage("assistant", data.message || data);
       selectedFiles = [];
       updateFileList();
@@ -111,7 +122,6 @@ document.addEventListener("DOMContentLoaded", () => {
       displayMessage("assistant", `Sorry, an error occurred: ${error.message}`);
     }
   }
-
   function handleFileUpload(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -136,25 +146,47 @@ document.addEventListener("DOMContentLoaded", () => {
     return "unknown";
   }
 
+  function initializeModelSelect() {
+    // Set the default model (should match the default in your LLMService)
+    modelSelect.value = "claude-3-sonnet-20240229";
+  }
+
   // Event listeners
-  document
-    .getElementById("llm-select")
-    .addEventListener("change", async (e) => {
-      const llm = e.target.value;
-      try {
-        const response = await fetch("/switch_llm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ llm }),
-        });
-        if (!response.ok) throw new Error("Failed to switch LLM");
-        const data = await response.json();
-        displayMessage("assistant", data.message);
-      } catch (error) {
-        console.error("Error switching LLM:", error);
-        displayMessage("assistant", `Failed to switch LLM: ${error.message}`);
-      }
-    });
+  modelSelect.addEventListener("change", async (e) => {
+    const model = e.target.value;
+    try {
+      const response = await fetch("/set_model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      if (!response.ok) throw new Error("Failed to set model");
+      const data = await response.json();
+      displayMessage("assistant", data.message);
+    } catch (error) {
+      console.error("Error setting model:", error);
+      displayMessage("assistant", `Failed to set model: ${error.message}`);
+    }
+  });
+
+  // document
+  //   .getElementById("model-select")
+  //   .addEventListener("change", async (e) => {
+  //     const llm = e.target.value;
+  //     try {
+  //       const response = await fetch("/switch_llm", {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({ llm }),
+  //       });
+  //       if (!response.ok) throw new Error("Failed to switch LLM");
+  //       const data = await response.json();
+  //       displayMessage("assistant", data.message);
+  //     } catch (error) {
+  //       console.error("Error switching LLM:", error);
+  //       displayMessage("assistant", `Failed to switch LLM: ${error.message}`);
+  //     }
+  //   });
 
   sendBtn.addEventListener("click", () => {
     const message = userInput.value.trim();

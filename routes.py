@@ -15,24 +15,40 @@ def register_routes(app, llm_service, file_service):
 
     @app.route('/chat', methods=['POST'])
     def chat():
-        data = request.json
-        message = data['message']
-        files = data.get('files', [])
-        
-        response = conversation_service.process_message(message, files)
-        return jsonify(response)
+        try:
+            data = request.json
+            message = data['message']
+            files = data.get('files', [])
+            model = data.get('model')
+            
+            print(f"Received message: {message}")  # Add this log
+            print(f"Selected model: {model}")  # Add this log
+            
+            if model:
+                try:
+                    llm_service.set_model(model)
+                except ValueError as e:
+                    print(f"Error setting model: {str(e)}")  # Add this log
+                    return jsonify({"error": str(e)}), 400
+            
+            response = conversation_service.process_message(message, files)
+            print(f"LLM response: {response}")  # Add this log
+            return jsonify(response)
+        except Exception as e:
+            print(f"Error in chat route: {str(e)}")  # Add this log
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/export_chat', methods=['GET'])
     def export_chat():
         chat_export = conversation_service.export_chat()
         return jsonify({"export": chat_export})
     
-    @app.route('/switch_llm', methods=['POST'])
-    def switch_llm():
+    @app.route('/set_model', methods=['POST'])
+    def set_model():
         data = request.json
-        llm_name = data.get('llm')
+        model = data.get('model')
         try:
-            llm_service.switch_llm(llm_name)
-            return jsonify({"message": f"Switched to {llm_name}"})
+            llm_service.set_model(model)
+            return jsonify({"message": f"Model set to {model}"})
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
