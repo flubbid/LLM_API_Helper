@@ -84,6 +84,7 @@ yarn-error.log
 
 # Logs
 *.log
+logs/
 
 # Virtual environment
 venv/
