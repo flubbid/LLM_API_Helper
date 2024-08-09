@@ -26,3 +26,13 @@ def register_routes(app, llm_service, file_service):
     def export_chat():
         chat_export = conversation_service.export_chat()
         return jsonify({"export": chat_export})
+    
+    @app.route('/switch_llm', methods=['POST'])
+    def switch_llm():
+        data = request.json
+        llm_name = data.get('llm')
+        try:
+            llm_service.switch_llm(llm_name)
+            return jsonify({"message": f"Switched to {llm_name}"})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
