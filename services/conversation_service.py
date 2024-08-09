@@ -14,8 +14,7 @@ class ConversationService:
 
         self.conversation_history.append({"role": "user", "content": user_content})
 
-        # For now, we're using Claude. You can easily switch to another LLM here.
-        assistant_message = self.llm_service.call_claude(self.conversation_history)
+        assistant_message = self.llm_service.call_llm(self.conversation_history)
         
         if assistant_message:
             # Ensure assistant_message is a string
