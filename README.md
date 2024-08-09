@@ -2,25 +2,26 @@
 
 LLM API UI Helper is a versatile web-based interface for interacting with various Language Model APIs, including Claude and potentially others. This application supports text-based conversations, file uploads, and offers features like conversation export and dark mode.
 
-This is currently under development. I am mainly just creating this to make using the APIs have a similar experience to the Chat GPT UI, to be able to avoid the monthly subscription fee, while still being able to utilize most of its features.
-
---Currently Only Supports Claude AI--
+This is currently under development. The primary goal is to create a similar user experience to the ChatGPT UI, avoiding subscription fees while still utilizing most of its features.
 
 ## Features
 
 - Interactive chat interface
 - Support for multiple LLM APIs (currently Claude, with potential for expansion)
 - File upload and processing capability
-- Dark mode
-- Conversation export
+  - Supports images, CSVs, and code files
+- Dark mode toggle
+- Conversation export to text file
 - Syntax highlighting for code snippets
 - Responsive design
+- Customizable font size
+- Model selection from available LLMs
 
 ## Technology Stack
 
-- Backend: Python with Flask
-- Frontend: HTML, CSS, JavaScript
-- AI Integration: Anthropic's Claude API (with potential for other LLMs)
+- **Backend:** Python with Flask
+- **Frontend:** HTML, CSS, JavaScript
+- **AI Integration:** Anthropic's Claude API (with potential for other LLMs)
 
 ## Prerequisites
 
@@ -34,27 +35,28 @@ Before you begin, ensure you have met the following requirements:
 
 1. Clone the repository:
 
-   ```
+   ```bash
    git clone https://github.com/yourusername/LLM_Helper.git
    cd LLM_Helper
    ```
 
 2. Create a virtual environment and activate it:
 
-   ```
+   ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
    ```
 
 3. Install the required packages:
 
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
 4. Set up environment variables:
    Create a `.env` file in the root directory and add your API keys:
-   ```
+
+   ```bash
    CLAUDE_API_KEY=your_claude_api_key_here
    OPENAI_API_KEY=your_openai_api_key_here  # If using OpenAI
    ```
@@ -63,7 +65,7 @@ Before you begin, ensure you have met the following requirements:
 
 1. Start the Flask server:
 
-   ```
+   ```bash
    python app.py
    ```
 
@@ -73,7 +75,7 @@ Before you begin, ensure you have met the following requirements:
 
 ## Project Structure
 
-```
+```plaintext
 LLM_Helper/
 │
 ├── static/
@@ -90,3 +92,35 @@ LLM_Helper/
 ├── requirements.txt
 └── README.md
 ```
+
+## Routes
+
+- `/` - Main index page, serves the frontend.
+- `/new_conversation` - POST, initializes a new conversation.
+- `/chat` - POST, sends a message to the selected LLM and receives a response.
+- `/export_chat` - GET, exports the current conversation history.
+- `/set_model` - POST, sets the model to be used by the LLM service.
+
+## Services
+
+- **LLMService**: Handles communication with the LLM APIs.
+- **FileService**: Processes different types of files (images, CSVs, code).
+- **ConversationService**: Manages conversation history and handles messages.
+
+## Logging and Debugging
+
+Logging is configured to provide detailed information during execution. The logs will display:
+
+- Initialization of services.
+- API requests and responses.
+- Errors encountered during execution.
+
+You can view logs in the console to help with debugging and ensuring proper functioning.
+
+## Contributing
+
+Contributions are welcome! Please fork the repository and create a pull request.
+
+## License
+
+This project is licensed under the MIT License.
