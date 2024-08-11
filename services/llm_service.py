@@ -46,23 +46,28 @@ class LLMService:
     def create_assistant(self, name, instructions):
         headers = {
             'Authorization': f'Bearer {self.openai_api_key}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'OpenAI-Beta': 'assistants=v1'  # This header is still required
         }
         data = {
-            'model': self.current_model,
+            'model': self.current_model,  # Use the current model set in the service
             'name': name,
             'instructions': instructions,
-            'tools': [{'type': 'retrieval'}]
+            'tools': [{'type': 'retrieval'}],
+            'file_ids': []  # Optional, include if you want to attach files
         }
         try:
             logger.info(f"Creating new assistant with name: {name}")
             response = requests.post(self.openai_assistants_url, headers=headers, json=data)
             response.raise_for_status()
-            assistant_id = response.json()['id']
+            assistant_data = response.json()
+            assistant_id = assistant_data['id']
             logger.info(f"Created new OpenAI Assistant with ID: {assistant_id}")
             return assistant_id
         except requests.RequestException as e:
             logger.error(f"Error creating OpenAI Assistant: {e}", exc_info=True)
+            if e.response is not None:
+                logger.error(f"Response content: {e.response.content}")
             raise
 
     def _create_or_get_assistant(self):
@@ -77,17 +82,22 @@ class LLMService:
     def _create_thread(self):
         headers = {
             'Authorization': f'Bearer {self.openai_api_key}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'OpenAI-Beta': 'assistants=v1'  
         }
         try:
             logger.info("Creating new thread for conversation")
-            response = requests.post(self.openai_threads_url, headers=headers)
+            response = requests.post(self.openai_threads_url, headers=headers, json={})  # Send an empty JSON object
             response.raise_for_status()
             self.openai_thread_id = response.json()['id']
             logger.info(f"Created new OpenAI Thread with ID: {self.openai_thread_id}")
+            return self.openai_thread_id
         except requests.RequestException as e:
             logger.error(f"Error creating OpenAI Thread: {e}", exc_info=True)
-            raise
+            if e.response is not None:
+                logger.error(f"Response status code: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.content}")
+        raise
 
     def call_llm(self, messages, files=None, assistant_id=None):
         logger.info("Calling LLM")
@@ -133,7 +143,8 @@ class LLMService:
         try:
             headers = {
                 'Authorization': f'Bearer {self.openai_api_key}',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v1'
             }
 
             # Use provided assistant_id or create/get a default one
@@ -152,9 +163,11 @@ class LLMService:
             # Add message to thread
             message_data = {
                 'role': 'user',
-                'content': messages[-1]['content'],
-                'file_ids': file_ids
+                'content': messages[-1]['content']
             }
+            if file_ids:
+                message_data['file_ids'] = file_ids
+            
             message_url = f"{self.openai_threads_url}/{thread_id}/messages"
             logger.info(f"Adding message to OpenAI thread: {message_data}")
             response = requests.post(message_url, headers=headers, json=message_data)
@@ -194,8 +207,11 @@ class LLMService:
 
         except requests.RequestException as e:
             logger.error(f"Error in call_openai_assistant: {str(e)}", exc_info=True)
+            if e.response is not None:
+                logger.error(f"Response status code: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.content}")
             return None
-
+        
     def upload_files_to_openai(self, files: List[Dict]) -> List[str]:
         file_ids = []
         for file in files:
