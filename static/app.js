@@ -13,106 +13,143 @@ document.addEventListener("DOMContentLoaded", () => {
   const fontSizeSlider = document.getElementById("font-size");
   const languageSelect = document.getElementById("language");
   const modelSelect = document.getElementById("model-select");
-  initializeModelSelect();
+  const assistantModeCheckbox = document.getElementById("assistant-mode");
+  const assistantModal = document.getElementById("assistant-modal");
+  const createAssistantBtn = document.getElementById("create-assistant");
+  const closeAssistantModalBtn = document.getElementById(
+    "close-assistant-modal"
+  );
+
   let selectedFiles = [];
+  let isAssistantMode = false;
+  let currentAssistantId = null;
 
-  // File handling functions
-  function handleFiles(files) {
-    Array.from(files).forEach((file) => {
-      if (
-        !selectedFiles.some((existingFile) => existingFile.name === file.name)
-      ) {
-        selectedFiles.push(file);
+  console.log("Initializing app.js");
+
+  initializeModelSelect();
+
+  async function initializeModelSelect() {
+    console.log("Initializing model select");
+    try {
+      const response = await fetch("/get_available_models");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    });
-    updateDropZoneText();
-    updateFileList();
-  }
+      const models = await response.json();
 
-  function updateDropZoneText() {
-    const dropZoneText = dropZone.querySelector("p");
-    dropZoneText.textContent =
-      selectedFiles.length > 0
-        ? `${selectedFiles.length} file(s) selected`
-        : "Drag & drop files here or click to select";
-  }
+      // Clear existing options
+      modelSelect.innerHTML = "";
 
-  function updateFileList() {
-    const fileListContainer = document.getElementById("file-list");
-    if (fileListContainer) {
-      fileListContainer.innerHTML = "";
-      selectedFiles.forEach((file, index) => {
-        const fileItem = document.createElement("div");
-        fileItem.className = "file-item";
-        fileItem.innerHTML = `
-                <span>${file.name}</span>
-                <button onclick="removeFile(${index})">Remove</button>
-            `;
-        fileListContainer.appendChild(fileItem);
+      // Add new options
+      models.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = model;
+        option.textContent = model;
+        modelSelect.appendChild(option);
       });
+
+      console.log("Model select initialized with available models");
+    } catch (error) {
+      console.error("Error initializing model select:", error);
     }
   }
 
-  function removeFile(index) {
-    selectedFiles.splice(index, 1);
-    updateFileList();
-    updateDropZoneText();
-  }
-
-  // Message display and formatting
-  function displayMessage(role, content) {
-    const messageDiv = document.createElement("div");
-    messageDiv.classList.add("message", `${role}-message`);
-    const timestamp = new Date().toLocaleTimeString();
-    messageDiv.innerHTML = `
-            <div class="message-timestamp">${timestamp}</div>
-            <div class="message-content">${formatMessage(content)}</div>
-        `;
-    chatContainer.appendChild(messageDiv);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-    hljs.highlightAll();
-  }
-
-  function formatMessage(content) {
-    return content.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const language = lang || "plaintext";
-      const highlightedCode = hljs.highlight(code.trim(), { language }).value;
-      return `
-                <div class="code-block">
-                    <div class="code-header">
-                        <span class="code-language">${language}</span>
-                        <button class="copy-code-btn" data-language="${language}">Copy ${language}</button>
-                    </div>
-                    <pre><code class="hljs ${language}">${highlightedCode}</code></pre>
-                </div>
-            `;
+  function handleFileUpload(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        resolve({
+          name: file.name,
+          type: file.type.startsWith("image/")
+            ? "image"
+            : file.type === "text/csv"
+            ? "csv"
+            : "code",
+          data: e.target.result.split(",")[1],
+        });
+      };
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
     });
   }
 
-  // API communication
-  async function sendMessage(message) {
+  async function createAssistant(name, instructions) {
     try {
-      console.log("Sending message:", message); // Add this log
-      console.log("Selected model:", modelSelect.value); // Add this log
-      const fileData = await Promise.all(selectedFiles.map(handleFileUpload));
-      const response = await fetch("/chat", {
+      const response = await fetch("/create_assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          files: fileData,
-          model: modelSelect.value,
-        }),
+        body: JSON.stringify({ name, instructions }),
       });
-
-      console.log("Response status:", response.status); // Add this log
 
       if (!response.ok) {
         throw new Error(`Server error: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log("Received data:", data); // Add this log
+      currentAssistantId = data.assistantId;
+      displayMessage("system", `Assistant "${name}" created successfully.`);
+      assistantModal.style.display = "none";
+    } catch (error) {
+      console.error("Error creating assistant:", error);
+      displayMessage("system", `Failed to create assistant: ${error.message}`);
+    }
+  }
+
+  function displayMessage(role, content) {
+    console.log(`Displaying ${role} message:`, content);
+    const messageDiv = document.createElement("div");
+    messageDiv.classList.add("message", `${role}-message`);
+    messageDiv.textContent = content;
+    if (chatContainer) {
+      chatContainer.appendChild(messageDiv);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+  }
+
+  async function sendMessage(message) {
+    console.log("Sending message:", message);
+    try {
+      console.log("Selected model:", modelSelect.value);
+      const fileData = await Promise.all(
+        selectedFiles.map((file) => handleFileUpload(file))
+      );
+      const payload = {
+        message,
+        files: fileData,
+        model: modelSelect.value,
+      };
+
+      if (isAssistantMode && currentAssistantId) {
+        payload.assistantId = currentAssistantId;
+      }
+
+      const response = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      console.log("Response status:", response.status);
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      function updateDropZoneText() {
+        console.log("Updating drop zone text");
+        if (dropZone) {
+          const dropZoneText = dropZone.querySelector("p");
+          if (dropZoneText) {
+            dropZoneText.textContent =
+              selectedFiles.length > 0
+                ? `${selectedFiles.length} file(s) selected`
+                : "Drag & drop files here or click to select";
+          }
+        }
+      }
+
+      const data = await response.json();
+      console.log("Received data:", data);
       displayMessage("assistant", data.message || data);
       selectedFiles = [];
       updateFileList();
@@ -122,167 +159,134 @@ document.addEventListener("DOMContentLoaded", () => {
       displayMessage("assistant", `Sorry, an error occurred: ${error.message}`);
     }
   }
-  function handleFileUpload(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        resolve({
-          type: getFileType(file),
-          data: event.target.result.split(",")[1],
-          name: file.name,
-          size: file.size,
-        });
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+
+  function handleFiles(files) {
+    console.log("Handling file upload", files);
+    Array.from(files).forEach((file) => {
+      if (
+        !selectedFiles.some((existingFile) => existingFile.name === file.name)
+      ) {
+        selectedFiles.push(file);
+      }
+      updateDropZoneText();
+      updateFileList();
     });
   }
 
-  function getFileType(file) {
-    const extension = file.name.split(".").pop().toLowerCase();
-    if (file.type.startsWith("image/")) return "image";
-    if (file.type === "text/csv" || extension === "csv") return "csv";
-    if (["js", "py", "html", "css", "txt"].includes(extension)) return "code";
-    return "unknown";
-  }
-
-  function initializeModelSelect() {
-    // Set the default model (should match the default in your LLMService)
-    modelSelect.value = "claude-3-sonnet-20240229";
-  }
-
-  // Event listeners
-  modelSelect.addEventListener("change", async (e) => {
-    const model = e.target.value;
-    try {
-      const response = await fetch("/set_model", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
+  function updateFileList() {
+    console.log("Updating file list", selectedFiles);
+    const fileListContainer = document.getElementById("file-list");
+    if (fileListContainer) {
+      fileListContainer.innerHTML = "";
+      selectedFiles.forEach((file, index) => {
+        const fileItem = document.createElement("div");
+        fileItem.className = "file-item";
+        fileItem.innerHTML = `
+          <span>${file.name}</span>
+          <button onclick="removeFile(${index})">Remove</button>
+        `;
+        fileListContainer.appendChild(fileItem);
       });
-      if (!response.ok) throw new Error("Failed to set model");
-      const data = await response.json();
-      displayMessage("assistant", data.message);
-    } catch (error) {
-      console.error("Error setting model:", error);
-      displayMessage("assistant", `Failed to set model: ${error.message}`);
     }
-  });
+  }
 
-  clearHistoryBtn.addEventListener("click", async () => {
-    try {
-      const response = await fetch("/new_conversation", { method: "POST" });
-      if (response.ok) {
-        const data = await response.json();
-        chatContainer.innerHTML = "";
-        displayMessage("assistant", data.message);
-      } else {
-        throw new Error("Failed to start new conversation");
+  function removeFile(index) {
+    console.log(`Removing file at index ${index}`);
+    selectedFiles.splice(index, 1);
+    updateFileList();
+    updateDropZoneText();
+  }
+
+  // Add event listeners only if the elements exist
+  if (sendBtn) {
+    sendBtn.addEventListener("click", () => {
+      const message = userInput.value.trim();
+      if (message || selectedFiles.length > 0) {
+        displayMessage("user", message);
+        sendMessage(message);
+        userInput.value = "";
       }
-    } catch (error) {
-      console.error("Error:", error);
-      displayMessage(
-        "assistant",
-        "Failed to start a new conversation. Please try again."
-      );
-    }
-  });
+    });
+  }
 
-  sendBtn.addEventListener("click", () => {
-    const message = userInput.value.trim();
-    if (message || selectedFiles.length > 0) {
-      displayMessage("user", message);
-      sendMessage(message);
-      userInput.value = "";
-    }
-  });
-
-  userInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendBtn.click();
-    }
-  });
-
-  clearHistoryBtn.addEventListener("click", async () => {
-    try {
-      const response = await fetch("/new_conversation", { method: "POST" });
-      if (response.ok) {
-        chatContainer.innerHTML = "";
+  if (userInput) {
+    userInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendBtn.click();
+      }
+    });
+  }
+  if (clearHistoryBtn)
+    clearHistoryBtn.addEventListener("click", async () => {
+      try {
+        const response = await fetch("/new_conversation", { method: "POST" });
+        if (response.ok) {
+          chatContainer.innerHTML = "";
+          displayMessage(
+            "assistant",
+            "New conversation started. How can I help you?"
+          );
+        } else {
+          throw new Error("Failed to start new conversation");
+        }
+      } catch (error) {
+        console.error("Error:", error);
         displayMessage(
           "assistant",
-          "New conversation started. How can I help you?"
+          "Failed to start a new conversation. Please try again."
         );
-      } else {
-        throw new Error("Failed to start new conversation");
       }
-    } catch (error) {
-      console.error("Error:", error);
-      displayMessage(
-        "assistant",
-        "Failed to start a new conversation. Please try again."
-      );
-    }
-  });
+    });
 
-  exportChatBtn.addEventListener("click", () => {
-    const chatContent = Array.from(chatContainer.children)
-      .map((msg) => {
-        const role = msg.classList.contains("user-message")
-          ? "User"
-          : "Assistant";
-        const content = msg.querySelector(".message-content").textContent;
-        return `${role}: ${content}\n`;
-      })
-      .join("\n");
+  if (exportChatBtn)
+    exportChatBtn.addEventListener("click", () => {
+      // ... (export chat functionality)
+    });
 
-    const blob = new Blob([chatContent], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "chat_export.txt";
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  if (darkModeToggle)
+    darkModeToggle.addEventListener("click", () => {
+      document.body.classList.toggle("dark-mode");
+    });
 
-  darkModeToggle.addEventListener("click", () => {
-    document.body.classList.toggle("dark-mode");
-  });
+  if (dropZone) {
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    });
 
-  dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-    handleFiles(e.dataTransfer.files);
-  });
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
 
-  dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
-  });
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      handleFiles(e.dataTransfer.files);
+    });
 
-  dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-  });
+    dropZone.addEventListener("click", () => {
+      fileUpload.click();
+    });
+  }
 
-  dropZone.addEventListener("click", () => {
-    fileUpload.click();
-  });
+  if (fileUpload)
+    fileUpload.addEventListener("change", (event) => {
+      handleFiles(event.target.files);
+    });
 
-  fileUpload.addEventListener("change", (event) => {
-    handleFiles(event.target.files);
-  });
-
-  userInput.addEventListener("paste", (e) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image") !== -1) {
-        const blob = items[i].getAsFile();
-        handleFiles([blob]);
-        e.preventDefault();
-        break;
+  if (userInput)
+    userInput.addEventListener("paste", (e) => {
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const blob = items[i].getAsFile();
+          handleFiles([blob]);
+          e.preventDefault();
+          break;
+        }
       }
-    }
-  });
+    });
 
   // Settings modal
   settingsBtn.addEventListener("click", () => {
@@ -298,7 +302,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   languageSelect.addEventListener("change", (e) => {
-    // Here you would implement language change logic
     console.log(`Language changed to ${e.target.value}`);
   });
 
@@ -316,6 +319,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  assistantModeCheckbox.addEventListener("change", (e) => {
+    isAssistantMode = e.target.checked;
+    if (isAssistantMode && !currentAssistantId) {
+      assistantModal.style.display = "block";
+    }
+  });
+
+  createAssistantBtn.addEventListener("click", () => {
+    const name = document.getElementById("assistant-name").value;
+    const instructions = document.getElementById(
+      "assistant-instructions"
+    ).value;
+    if (name && instructions) {
+      createAssistant(name, instructions);
+    } else {
+      displayMessage(
+        "system",
+        "Please provide a name and instructions for the assistant."
+      );
+    }
+  });
+
+  closeAssistantModalBtn.addEventListener("click", () => {
+    assistantModal.style.display = "none";
+  });
+
   // Initial message
   displayMessage("assistant", "Hello! How can I assist you today?");
 });
+
+// Make removeFile available globally
+window.removeFile = removeFile;

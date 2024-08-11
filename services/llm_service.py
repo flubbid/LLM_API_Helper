@@ -2,8 +2,9 @@ import os
 import requests
 from typing import List, Dict, Optional
 import logging
+import base64
+import time
 
-# Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -13,42 +14,101 @@ class LLMService:
         self.claude_api_key = os.getenv('CLAUDE_API_KEY')
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
         self.claude_api_url = 'https://api.anthropic.com/v1/messages'
-        self.openai_api_url = 'https://api.openai.com/v1/chat/completions'
+        self.openai_chat_url = 'https://api.openai.com/v1/chat/completions'
+        self.openai_files_url = 'https://api.openai.com/v1/files'
+        self.openai_assistants_url = 'https://api.openai.com/v1/assistants'
+        self.openai_threads_url = 'https://api.openai.com/v1/threads'
         self.available_models = [
             'gpt-4',
             'gpt-4-turbo',
             'gpt-3.5-turbo',
-            'claude-3-sonnet-20240229'  # Current Claude model
+            'claude-3-sonnet-20240229'
         ]
-        self.current_model = 'claude-3-sonnet-20240229'  # Default model
+        self.current_model = 'claude-3-sonnet-20240229'
+        self.openai_assistant_id = None
+        self.openai_thread_id = None
         logger.info(f"Initial model set to: {self.current_model}")
         logger.debug(f"Claude API Key present: {'Yes' if self.claude_api_key else 'No'}")
         logger.debug(f"OpenAI API Key present: {'Yes' if self.openai_api_key else 'No'}")
-    
-    def switch_llm(self, llm_name):
-        return self.set_model(llm_name)
 
     def set_model(self, model: str):
         logger.info(f"Attempting to set model to: {model}")
         if model in self.available_models:
             self.current_model = model
             logger.info(f"Model successfully set to: {self.current_model}")
+            if model.startswith('gpt'):
+                self._create_or_get_assistant()
+                self._create_thread()
         else:
             logger.error(f"Unsupported model: {model}")
             raise ValueError(f"Unsupported model: {model}")
 
-    def call_llm(self, messages: List[Dict[str, str]]) -> Optional[str]:
-        logger.info(f"Calling LLM with model: {self.current_model}")
-        if self.current_model.startswith('gpt'):
-            return self.call_chatgpt(messages)
-        elif self.current_model.startswith('claude'):
-            return self.call_claude(messages)
-        else:
-            logger.error(f"Unknown model type: {self.current_model}")
-            return None
+    def create_assistant(self, name, instructions):
+        headers = {
+            'Authorization': f'Bearer {self.openai_api_key}',
+            'Content-Type': 'application/json'
+        }
+        data = {
+            'model': self.current_model,
+            'name': name,
+            'instructions': instructions,
+            'tools': [{'type': 'retrieval'}]
+        }
+        try:
+            logger.info(f"Creating new assistant with name: {name}")
+            response = requests.post(self.openai_assistants_url, headers=headers, json=data)
+            response.raise_for_status()
+            assistant_id = response.json()['id']
+            logger.info(f"Created new OpenAI Assistant with ID: {assistant_id}")
+            return assistant_id
+        except requests.RequestException as e:
+            logger.error(f"Error creating OpenAI Assistant: {e}", exc_info=True)
+            raise
+
+    def _create_or_get_assistant(self):
+        if not self.openai_assistant_id:
+            logger.info("Creating or retrieving default assistant")
+            self.openai_assistant_id = self.create_assistant(
+                "Default Assistant",
+                "You are an assistant capable of handling and discussing uploaded files."
+            )
+        return self.openai_assistant_id
+
+    def _create_thread(self):
+        headers = {
+            'Authorization': f'Bearer {self.openai_api_key}',
+            'Content-Type': 'application/json'
+        }
+        try:
+            logger.info("Creating new thread for conversation")
+            response = requests.post(self.openai_threads_url, headers=headers)
+            response.raise_for_status()
+            self.openai_thread_id = response.json()['id']
+            logger.info(f"Created new OpenAI Thread with ID: {self.openai_thread_id}")
+        except requests.RequestException as e:
+            logger.error(f"Error creating OpenAI Thread: {e}", exc_info=True)
+            raise
+
+    def call_llm(self, messages, files=None, assistant_id=None):
+        logger.info("Calling LLM")
+        try:
+            if assistant_id:
+                logger.info(f"Calling OpenAI Assistant with ID: {assistant_id}")
+                return self.call_openai_assistant(messages, files, assistant_id)
+            elif self.current_model.startswith('gpt'):
+                logger.info(f"Calling OpenAI Assistant with default ID: {self.openai_assistant_id}")
+                return self.call_openai_assistant(messages, files)
+            elif self.current_model.startswith('claude'):
+                logger.info("Calling Claude API")
+                return self.call_claude(messages)
+            else:
+                logger.error(f"Unknown model type: {self.current_model}")
+                raise ValueError(f"Unknown model type: {self.current_model}")
+        except Exception as e:
+            logger.error(f"Error during LLM call: {e}", exc_info=True)
+            raise
 
     def call_claude(self, messages: List[Dict[str, str]], max_tokens: int = 1000) -> Optional[str]:
-        logger.info("Calling Claude API")
         headers = {
             'Content-Type': 'application/json',
             'anthropic-version': '2023-06-01',
@@ -60,31 +120,104 @@ class LLMService:
             'messages': messages
         }
         try:
-            logger.debug(f"Sending request to Claude API with payload: {payload}")
+            logger.info(f"Sending request to Claude API with payload: {payload}")
             response = requests.post(self.claude_api_url, json=payload, headers=headers)
             response.raise_for_status()
             logger.info("Successfully received response from Claude API")
             return response.json()['content'][0]['text']
         except requests.RequestException as e:
-            logger.error(f"Error calling Claude API: {e}")
+            logger.error(f"Error calling Claude API: {e}", exc_info=True)
             return None
 
-    def call_chatgpt(self, messages: List[Dict[str, str]]) -> Optional[str]:
-        logger.info(f"Calling ChatGPT API with model: {self.current_model}")
-        headers = {
-            'Authorization': f'Bearer {self.openai_api_key}',
-            'Content-Type': 'application/json'
-        }
-        data = {
-            'model': self.current_model,
-            'messages': messages
-        }
+    def call_openai_assistant(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None) -> Optional[str]:
         try:
-            logger.debug(f"Sending request to ChatGPT API with data: {data}")
-            response = requests.post(self.openai_api_url, headers=headers, json=data)
+            headers = {
+                'Authorization': f'Bearer {self.openai_api_key}',
+                'Content-Type': 'application/json'
+            }
+
+            # Use provided assistant_id or create/get a default one
+            if not assistant_id:
+                logger.info("Creating or retrieving default assistant for OpenAI")
+                assistant_id = self._create_or_get_assistant()
+
+            # Create a new thread for this conversation
+            logger.info("Creating new thread for OpenAI conversation")
+            thread_id = self._create_thread()
+
+            # Upload files if any
+            file_ids = self.upload_files_to_openai(files) if files else []
+            logger.debug(f"File IDs uploaded to OpenAI: {file_ids}")
+
+            # Add message to thread
+            message_data = {
+                'role': 'user',
+                'content': messages[-1]['content'],
+                'file_ids': file_ids
+            }
+            message_url = f"{self.openai_threads_url}/{thread_id}/messages"
+            logger.info(f"Adding message to OpenAI thread: {message_data}")
+            response = requests.post(message_url, headers=headers, json=message_data)
             response.raise_for_status()
-            logger.info("Successfully received response from ChatGPT API")
-            return response.json()['choices'][0]['message']['content']
+
+            # Run the assistant
+            run_url = f"{self.openai_threads_url}/{thread_id}/runs"
+            run_data = {'assistant_id': assistant_id}
+            logger.info(f"Running OpenAI Assistant with data: {run_data}")
+            response = requests.post(run_url, headers=headers, json=run_data)
+            response.raise_for_status()
+            run_id = response.json()['id']
+
+            # Wait for completion
+            while True:
+                status_url = f"{run_url}/{run_id}"
+                response = requests.get(status_url, headers=headers)
+                response.raise_for_status()
+                status = response.json()['status']
+                logger.debug(f"OpenAI Assistant run status: {status}")
+                if status == 'completed':
+                    logger.info("OpenAI Assistant run completed successfully")
+                    break
+                elif status in ['failed', 'cancelled', 'expired']:
+                    logger.error(f"OpenAI Assistant run failed with status: {status}")
+                    return None
+                time.sleep(1)  # Wait for a second before checking again
+
+            # Retrieve the assistant's message
+            messages_url = f"{self.openai_threads_url}/{thread_id}/messages"
+            response = requests.get(messages_url, headers=headers)
+            response.raise_for_status()
+            assistant_message = response.json()['data'][0]['content'][0]['text']['value']
+            logger.info(f"Retrieved message from OpenAI Assistant: {assistant_message}")
+
+            return assistant_message
+
         except requests.RequestException as e:
-            logger.error(f"Error calling OpenAI API: {e}")
+            logger.error(f"Error in call_openai_assistant: {str(e)}", exc_info=True)
             return None
+
+    def upload_files_to_openai(self, files: List[Dict]) -> List[str]:
+        file_ids = []
+        for file in files:
+            file_data = base64.b64decode(file['data'])
+            files = {
+                'file': (file['name'], file_data, file['type'])
+            }
+            data = {
+                'purpose': 'assistants'
+            }
+            try:
+                logger.info(f"Uploading file to OpenAI: {file['name']}")
+                response = requests.post(
+                    self.openai_files_url,
+                    headers={'Authorization': f'Bearer {self.openai_api_key}'},
+                    files=files,
+                    data=data
+                )
+                response.raise_for_status()
+                file_id = response.json()['id']
+                file_ids.append(file_id)
+                logger.info(f"Successfully uploaded file to OpenAI with ID: {file_id}")
+            except requests.RequestException as e:
+                logger.error(f"Failed to upload file to OpenAI: {e}", exc_info=True)
+        return file_ids

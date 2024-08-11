@@ -62,7 +62,28 @@
             <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
             <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
           </select>
+          <label for="assistant-mode">Assistant Mode:</label>
+          <input type="checkbox" id="assistant-mode" />
           <button id="close-settings">Close</button>
+        </div>
+      </div>
+
+      <div id="assistant-modal" class="modal">
+        <div class="modal-content">
+          <h2>Assistant Configuration</h2>
+          <label for="assistant-name">Assistant Name:</label>
+          <input
+            type="text"
+            id="assistant-name"
+            placeholder="Enter assistant name"
+          />
+          <label for="assistant-instructions">Instructions:</label>
+          <textarea
+            id="assistant-instructions"
+            placeholder="Enter instructions for the assistant"
+          ></textarea>
+          <button id="create-assistant">Create Assistant</button>
+          <button id="close-assistant-modal">Close</button>
         </div>
       </div>
     </div>
