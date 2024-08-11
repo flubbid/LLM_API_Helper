@@ -46,19 +46,16 @@ class FileService:
 
     def process_file(self, file):
         file_type = file.get('type')
-        file_data = file.get('data')
         file_name = file.get('name', 'Unnamed file')
         
         logger.info(f"Processing file: {file_name} (Type: {file_type})")
         
-        # If the file is already processed, return it as is
-        if 'text' in file or 'source' in file:
-            logger.info(f"File {file_name} is already processed, returning as is")
-            return file
+        # Check for different possible locations of file data
+        file_data = file.get('data') or file.get('content') or (file.get('source', {}).get('data') if isinstance(file.get('source'), dict) else None)
         
         if not file_data:
-            logger.error(f"No data found for file: {file_name}")
-            return None
+            logger.warning(f"No data found for file: {file_name}. Attempting to process as text.")
+            return self.process_as_text(file)
         
         try:
             if file_type == 'image':
@@ -83,18 +80,31 @@ class FileService:
                         'name': file_name,
                         'text': f"CSV Preview of {file_name}:\n{json.dumps(csv_preview, indent=2)}"
                     }
-            elif file_type == 'code' or file_type == 'text':
-                file_preview = self.process_text_file(file_data)
-                if file_preview:
-                    logger.info(f"Text/Code file processed successfully: {file_name}")
-                    return {
-                        'type': 'text',
-                        'name': file_name,
-                        'text': f"Content preview of {file_name}:\n{file_preview}"
-                    }
+            elif file_type in ['code', 'text'] or file_type is None:
+                return self.process_as_text(file)
             else:
-                logger.warning(f"Unsupported file type: {file_type}")
-                return None
+                logger.warning(f"Unsupported file type: {file_type}. Attempting to process as text.")
+                return self.process_as_text(file)
         except Exception as e:
             logger.error(f"Error processing file: {file_name}, Type: {file_type}, Error: {str(e)}", exc_info=True)
             return None
+
+    def process_as_text(self, file):
+        file_name = file.get('name', 'Unnamed file')
+        file_content = file.get('text') or file.get('content') or file.get('data') or ''
+        
+        if isinstance(file_content, bytes):
+            file_content = file_content.decode('utf-8')
+        elif isinstance(file_content, str):
+            # If it's base64 encoded, decode it
+            try:
+                file_content = base64.b64decode(file_content).decode('utf-8')
+            except:
+                pass  # If it's not base64, keep the original string
+        
+        logger.info(f"Text file processed successfully: {file_name}")
+        return {
+            'type': 'text',
+            'name': file_name,
+            'text': f"Content of {file_name}:\n{file_content[:2000]}"  # Limit to 2000 characters
+        }
