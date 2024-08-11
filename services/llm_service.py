@@ -99,18 +99,12 @@ class LLMService:
                 logger.error(f"Response content: {e.response.content}")
         raise
 
-    def call_llm(self, messages, files=None, assistant_id=None):
-        logger.info("Calling LLM")
+    def call_llm(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None) -> Optional[str]:
         try:
-            if assistant_id:
-                logger.info(f"Calling OpenAI Assistant with ID: {assistant_id}")
+            if assistant_id or self.current_model.startswith('gpt'):
                 return self.call_openai_assistant(messages, files, assistant_id)
-            elif self.current_model.startswith('gpt'):
-                logger.info(f"Calling OpenAI Assistant with default ID: {self.openai_assistant_id}")
-                return self.call_openai_assistant(messages, files)
             elif self.current_model.startswith('claude'):
-                logger.info("Calling Claude API")
-                return self.call_claude(messages)
+                return self.call_claude(messages, files)
             else:
                 logger.error(f"Unknown model type: {self.current_model}")
                 raise ValueError(f"Unknown model type: {self.current_model}")
@@ -118,7 +112,7 @@ class LLMService:
             logger.error(f"Error during LLM call: {e}", exc_info=True)
             raise
 
-    def call_claude(self, messages: List[Dict[str, str]], max_tokens: int = 1000) -> Optional[str]:
+    def call_claude(self, messages: List[Dict[str, str]], files: List[Dict] = None, max_tokens: int = 1000) -> Optional[str]:
         headers = {
             'Content-Type': 'application/json',
             'anthropic-version': '2023-06-01',
@@ -129,6 +123,12 @@ class LLMService:
             'max_tokens': max_tokens,
             'messages': messages
         }
+        
+        if files:
+            # Add file content to the message
+            file_content = "\n".join([f"File: {file['name']}\nContent: {file.get('text', '')}" for file in files])
+            payload['messages'][-1]['content'] += f"\n\nAttached files:\n{file_content}"
+
         try:
             logger.info(f"Sending request to Claude API with payload: {payload}")
             response = requests.post(self.claude_api_url, json=payload, headers=headers)
@@ -147,20 +147,13 @@ class LLMService:
                 'OpenAI-Beta': 'assistants=v1'
             }
 
-            # Use provided assistant_id or create/get a default one
             if not assistant_id:
-                logger.info("Creating or retrieving default assistant for OpenAI")
                 assistant_id = self._create_or_get_assistant()
 
-            # Create a new thread for this conversation
-            logger.info("Creating new thread for OpenAI conversation")
             thread_id = self._create_thread()
 
-            # Upload files if any
             file_ids = self.upload_files_to_openai(files) if files else []
-            logger.debug(f"File IDs uploaded to OpenAI: {file_ids}")
 
-            # Add message to thread
             message_data = {
                 'role': 'user',
                 'content': messages[-1]['content']
@@ -169,39 +162,31 @@ class LLMService:
                 message_data['file_ids'] = file_ids
             
             message_url = f"{self.openai_threads_url}/{thread_id}/messages"
-            logger.info(f"Adding message to OpenAI thread: {message_data}")
             response = requests.post(message_url, headers=headers, json=message_data)
             response.raise_for_status()
 
-            # Run the assistant
             run_url = f"{self.openai_threads_url}/{thread_id}/runs"
             run_data = {'assistant_id': assistant_id}
-            logger.info(f"Running OpenAI Assistant with data: {run_data}")
             response = requests.post(run_url, headers=headers, json=run_data)
             response.raise_for_status()
             run_id = response.json()['id']
 
-            # Wait for completion
             while True:
                 status_url = f"{run_url}/{run_id}"
                 response = requests.get(status_url, headers=headers)
                 response.raise_for_status()
                 status = response.json()['status']
-                logger.debug(f"OpenAI Assistant run status: {status}")
                 if status == 'completed':
-                    logger.info("OpenAI Assistant run completed successfully")
                     break
                 elif status in ['failed', 'cancelled', 'expired']:
                     logger.error(f"OpenAI Assistant run failed with status: {status}")
                     return None
-                time.sleep(1)  # Wait for a second before checking again
+                time.sleep(1)
 
-            # Retrieve the assistant's message
             messages_url = f"{self.openai_threads_url}/{thread_id}/messages"
             response = requests.get(messages_url, headers=headers)
             response.raise_for_status()
             assistant_message = response.json()['data'][0]['content'][0]['text']['value']
-            logger.info(f"Retrieved message from OpenAI Assistant: {assistant_message}")
 
             return assistant_message
 
@@ -215,9 +200,16 @@ class LLMService:
     def upload_files_to_openai(self, files: List[Dict]) -> List[str]:
         file_ids = []
         for file in files:
-            file_data = base64.b64decode(file['data'])
-            files = {
-                'file': (file['name'], file_data, file['type'])
+            if 'source' in file and 'data' in file['source']:
+                file_data = base64.b64decode(file['source']['data'])
+            elif 'text' in file:
+                file_data = file['text'].encode('utf-8')
+            else:
+                logger.warning(f"Skipping file upload for {file.get('name', 'unnamed file')}: No valid data found")
+                continue
+
+            files_data = {
+                'file': (file['name'], file_data, file.get('type', 'application/octet-stream'))
             }
             data = {
                 'purpose': 'assistants'
@@ -227,7 +219,7 @@ class LLMService:
                 response = requests.post(
                     self.openai_files_url,
                     headers={'Authorization': f'Bearer {self.openai_api_key}'},
-                    files=files,
+                    files=files_data,
                     data=data
                 )
                 response.raise_for_status()
