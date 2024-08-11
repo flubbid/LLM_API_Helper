@@ -28,22 +28,16 @@ class ConversationService:
             processed_files = []
 
             for file in files:
-                if isinstance(file, dict) and ('text' in file or 'source' in file):
-                    # File is already processed
-                    processed_files.append(file)
+                processed_file = self.file_service.process_file(file)
+                if processed_file:
+                    logger.info(f"Processed file: {file.get('name', 'Unnamed file')} successfully")
+                    processed_files.append(processed_file)
+                    if processed_file['type'] == 'text':
+                        user_content.append({"type": "text", "text": processed_file['text']})
+                    elif processed_file['type'] == 'image':
+                        user_content.append({"type": "image", "image_url": "data:image/jpeg;base64," + processed_file['source']['data']})
                 else:
-                    processed_file = self.file_service.process_file(file)
-                    if processed_file:
-                        logger.info(f"Processed file: {file.get('name', 'Unnamed file')} successfully")
-                        processed_files.append(processed_file)
-                    else:
-                        logger.warning(f"Failed to process file: {file.get('name', 'Unnamed file')}")
-
-            for file in processed_files:
-                if file['type'] == 'text':
-                    user_content.append({"type": "text", "text": file['text']})
-                else:
-                    user_content.append(file)
+                    logger.warning(f"Failed to process file: {file.get('name', 'Unnamed file')}")
 
             self.conversation_history.append({"role": "user", "content": user_content})
 
