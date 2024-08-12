@@ -14,7 +14,7 @@ class ConversationService:
         try:
             logger.info("Starting a new conversation")
             self.conversation_history = []
-            self.llm_service._create_thread()  # Create a new thread for OpenAI if using GPT
+            self.llm_service._create_or_get_thread()  
             logger.info("New conversation started")
             return {"message": "New conversation started"}
         except Exception as e:
@@ -30,29 +30,22 @@ class ConversationService:
             for file in files:
                 processed_file = self.file_service.process_file(file)
                 if processed_file:
-                    logger.info(f"Processed file: {file.get('name', 'Unnamed file')} successfully")
                     processed_files.append(processed_file)
                     if processed_file['type'] == 'text':
                         user_content.append({"type": "text", "text": processed_file['text']})
                     elif processed_file['type'] == 'image':
-                        user_content.append({"type": "image", "image_url": "data:image/jpeg;base64," + processed_file['source']['data']})
-                else:
-                    logger.warning(f"Failed to process file: {file.get('name', 'Unnamed file')}")
+                        user_content.append({"type": "image", "image_url": processed_file['source']['data']})
 
+            # Add only the new message to the conversation history
             self.conversation_history.append({"role": "user", "content": user_content})
 
+            # Prepare messages for LLM, including only unique entries
             llm_messages = self._prepare_messages_for_llm()
+
             assistant_message = self.llm_service.call_llm(llm_messages, processed_files, assistant_id)
-            logger.info(f"Received response from LLM: {assistant_message}")
             
             if assistant_message:
-                if isinstance(assistant_message, dict):
-                    assistant_message = self.llm_service.call_llm(llm_messages, processed_files, assistant_id)
-                elif not isinstance(assistant_message, str):
-                    assistant_message = str(assistant_message)
-                
                 self.conversation_history.append({"role": "assistant", "content": [{"type": "text", "text": assistant_message}]})
-                logger.info("Message processed and added to conversation history")
                 return assistant_message
             else:
                 logger.error("Failed to get response from LLM")
@@ -62,23 +55,14 @@ class ConversationService:
             return {"error": str(e)}
         
     def _prepare_messages_for_llm(self):
-        try:
-            logger.info("Preparing messages for LLM")
-            llm_messages = []
-            for message in self.conversation_history:
-                content = ""
-                for item in message['content']:
-                    if item['type'] == 'text':
-                        content += item['text'] + "\n"
-                    elif item['type'] == 'image':
-                        content += "[Image uploaded]\n"
-                    # Add other file types as needed
-                llm_messages.append({"role": message['role'], "content": content.strip()})
-            logger.info("Messages prepared for LLM")
-            return llm_messages
-        except Exception as e:
-            logger.error(f"Error preparing messages for LLM: {e}", exc_info=True)
-            return []
+        unique_messages = []
+        seen = set()
+        for message in self.conversation_history:
+            message_content = message['content'][0]['text'] if message['content'] else ''
+            if message_content not in seen:
+                seen.add(message_content)
+                unique_messages.append({"role": message['role'], "content": message_content})
+        return unique_messages
 
     def export_chat(self):
         try:

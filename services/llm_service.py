@@ -19,7 +19,6 @@ class LLMService:
         self.openai_assistants_url = 'https://api.openai.com/v1/assistants'
         self.openai_threads_url = 'https://api.openai.com/v1/threads'
         self.available_models = [
-            'gpt-4',
             'gpt-4-turbo',
             'gpt-3.5-turbo',
             'claude-3-sonnet-20240229'
@@ -38,7 +37,7 @@ class LLMService:
             logger.info(f"Model successfully set to: {self.current_model}")
             if model.startswith('gpt'):
                 self._create_or_get_assistant()
-                self._create_thread()
+                self._create_or_get_thread()
         else:
             logger.error(f"Unsupported model: {model}")
             raise ValueError(f"Unsupported model: {model}")
@@ -79,25 +78,22 @@ class LLMService:
             )
         return self.openai_assistant_id
 
-    def _create_thread(self):
-        headers = {
-            'Authorization': f'Bearer {self.openai_api_key}',
-            'Content-Type': 'application/json',
-            'OpenAI-Beta': 'assistants=v1'  
-        }
-        try:
-            logger.info("Creating new thread for conversation")
-            response = requests.post(self.openai_threads_url, headers=headers, json={})  # Send an empty JSON object
-            response.raise_for_status()
-            self.openai_thread_id = response.json()['id']
-            logger.info(f"Created new OpenAI Thread with ID: {self.openai_thread_id}")
-            return self.openai_thread_id
-        except requests.RequestException as e:
-            logger.error(f"Error creating OpenAI Thread: {e}", exc_info=True)
-            if e.response is not None:
-                logger.error(f"Response status code: {e.response.status_code}")
-                logger.error(f"Response content: {e.response.content}")
-        raise
+    def _create_or_get_thread(self):
+        if not self.openai_thread_id:
+            try:
+                headers = {
+                    'Authorization': f'Bearer {self.openai_api_key}',
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v1'
+                }
+                response = requests.post(self.openai_threads_url, headers=headers, json={})
+                response.raise_for_status()
+                self.openai_thread_id = response.json()['id']
+                logger.info(f"Created new thread with ID: {self.openai_thread_id}")
+            except requests.RequestException as e:
+                logger.error(f"Error creating thread: {str(e)}")
+                raise
+        return self.openai_thread_id
 
     def call_llm(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None) -> Optional[str]:
         try:
@@ -139,7 +135,7 @@ class LLMService:
             logger.error(f"Error calling Claude API: {e}", exc_info=True)
             return None
 
-    def call_openai_assistant(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None) -> Optional[str]:
+    def call_openai_assistant(self, messages, files=None, assistant_id=None):
         try:
             headers = {
                 'Authorization': f'Bearer {self.openai_api_key}',
@@ -150,27 +146,29 @@ class LLMService:
             if not assistant_id:
                 assistant_id = self._create_or_get_assistant()
 
-            thread_id = self._create_thread()
+            thread_id = self._create_or_get_thread()
 
-            file_ids = self.upload_files_to_openai(files) if files else []
-
+            # Send only the new message to the thread
+            new_message = messages[-1]  # Get the last (newest) message
             message_data = {
-                'role': 'user',
-                'content': messages[-1]['content']
+                'role': new_message['role'],
+                'content': new_message['content']
             }
-            if file_ids:
-                message_data['file_ids'] = file_ids
+            if files:
+                message_data['file_ids'] = self.upload_files_to_openai(files)
             
             message_url = f"{self.openai_threads_url}/{thread_id}/messages"
             response = requests.post(message_url, headers=headers, json=message_data)
             response.raise_for_status()
 
+            # Run the assistant
             run_url = f"{self.openai_threads_url}/{thread_id}/runs"
             run_data = {'assistant_id': assistant_id}
             response = requests.post(run_url, headers=headers, json=run_data)
             response.raise_for_status()
             run_id = response.json()['id']
 
+            # Wait for the run to complete
             while True:
                 status_url = f"{run_url}/{run_id}"
                 response = requests.get(status_url, headers=headers)
@@ -181,8 +179,8 @@ class LLMService:
                 elif status in ['failed', 'cancelled', 'expired']:
                     logger.error(f"OpenAI Assistant run failed with status: {status}")
                     return None
-                time.sleep(1)
 
+            # Retrieve the assistant's message
             messages_url = f"{self.openai_threads_url}/{thread_id}/messages"
             response = requests.get(messages_url, headers=headers)
             response.raise_for_status()
@@ -191,11 +189,11 @@ class LLMService:
             return assistant_message
 
         except requests.RequestException as e:
-            logger.error(f"Error in call_openai_assistant: {str(e)}", exc_info=True)
-            if e.response is not None:
-                logger.error(f"Response status code: {e.response.status_code}")
-                logger.error(f"Response content: {e.response.content}")
-            return None
+            logger.error(f"Error in OpenAI API call: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in call_openai_assistant: {str(e)}")
+            raise
         
     def upload_files_to_openai(self, files: List[Dict]) -> List[str]:
         file_ids = []
