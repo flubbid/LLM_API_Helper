@@ -47,14 +47,14 @@ class LLMService:
         headers = {
             'Authorization': f'Bearer {self.openai_api_key}',
             'Content-Type': 'application/json',
-            'OpenAI-Beta': 'assistants=v1'  # This header is still required
+            'OpenAI-Beta': 'assistants=v1'
         }
         data = {
-            'model': self.current_model,  # Use the current model set in the service
+            'model': self.current_model,
             'name': name,
             'instructions': instructions,
             'tools': [{'type': 'retrieval'}],
-            'file_ids': []  # Optional, include if you want to attach files
+            'file_ids': []
         }
         try:
             logger.info(f"Creating new assistant with name: {name}")
@@ -75,7 +75,7 @@ class LLMService:
             logger.info("Creating or retrieving default assistant")
             self.openai_assistant_id = self.create_assistant(
                 "Default Assistant",
-                "You are an assistant capable of handling and discussing uploaded files."
+                "You are a helpful assistant that can provide information and answer questions. ALWAYS respond in markdown format."
             )
         return self.openai_assistant_id
 
