@@ -99,11 +99,22 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log(`Displaying ${role} message:`, content);
     const messageDiv = document.createElement("div");
     messageDiv.classList.add("message", `${role}-message`);
-    messageDiv.textContent = content;
+
+    // Parse Markdown content
+    const parsedContent = marked.parse(content);
+
+    // Set inner HTML of message div
+    messageDiv.innerHTML = parsedContent;
+
     if (chatContainer) {
       chatContainer.appendChild(messageDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+
+    // Apply syntax highlighting to code blocks
+    messageDiv.querySelectorAll("pre code").forEach((block) => {
+      hljs.highlightElement(block);
+    });
   }
 
   async function sendMessage(message) {
