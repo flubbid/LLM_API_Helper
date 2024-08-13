@@ -1,0 +1,17 @@
+{
+  "name": "llm_helper",
+  "version": "1.0.0",
+  "description": "LLM API UI Helper is a versatile web-based interface for interacting with various Language Model APIs, including Claude and potentially others. This application supports text-based conversations, file uploads, and offers features like conversation export and dark mode.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "playwright test"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.35.0"
+  }
+}
