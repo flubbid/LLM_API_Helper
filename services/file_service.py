@@ -10,13 +10,15 @@ logger = logging.getLogger(__name__)
 class FileService:
     def process_image(self, image_data):
         try:
-            logger.info("Starting image processing")
+            logger.info(f"Starting image processing. Data length: {len(image_data)}")
             encoded = image_data.split(",", 1)[1] if image_data.startswith('data:') else image_data
+            logger.debug(f"Encoded image data (first 100 chars): {encoded[:100]}")
             img = Image.open(io.BytesIO(base64.b64decode(encoded))).convert('RGB')
+            logger.info(f"Image opened. Size: {img.size}, Mode: {img.mode}")
             buffer = io.BytesIO()
             img.save(buffer, format='JPEG')
             processed_image_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            logger.info("Image processed successfully")
+            logger.info(f"Image processed successfully. Processed data length: {len(processed_image_data)}")
             return processed_image_data
         except Exception as e:
             logger.error(f"Error processing image: {str(e)}", exc_info=True)
@@ -24,24 +26,14 @@ class FileService:
 
     def process_csv(self, csv_data):
         try:
-            logger.info("Starting CSV processing")
+            logger.info(f"Starting CSV processing. Data length: {len(csv_data)}")
             csv_string = base64.b64decode(csv_data).decode('utf-8')
+            logger.debug(f"Decoded CSV data (first 100 chars): {csv_string[:100]}")
             rows = list(csv.reader(csv_string.splitlines()))
             logger.info(f"CSV processed successfully with {len(rows)} rows")
             return rows[:2000]  # Limit the number of rows returned
         except Exception as e:
             logger.error(f"Error processing CSV: {str(e)}", exc_info=True)
-            return None
-
-    def process_text_file(self, file_data):
-        try:
-            logger.info("Starting text file processing")
-            file_content = base64.b64decode(file_data).decode('utf-8')
-            processed_text = file_content[:2000]  # Limit the content length
-            logger.info("Text file processed successfully")
-            return processed_text
-        except Exception as e:
-            logger.error(f"Error processing text file: {str(e)}", exc_info=True)
             return None
 
     def process_file(self, file):
@@ -50,12 +42,13 @@ class FileService:
         
         logger.info(f"Processing file: {file_name} (Type: {file_type})")
         
-        # Check for different possible locations of file data
         file_data = file.get('data') or file.get('content') or (file.get('source', {}).get('data') if isinstance(file.get('source'), dict) else None)
         
         if not file_data:
             logger.warning(f"No data found for file: {file_name}. Attempting to process as text.")
             return self.process_as_text(file)
+        
+        logger.info(f"File data found. Length: {len(file_data)}")
         
         try:
             if file_type == 'image':
@@ -93,16 +86,18 @@ class FileService:
         file_name = file.get('name', 'Unnamed file')
         file_content = file.get('text') or file.get('content') or file.get('data') or ''
         
+        logger.info(f"Processing as text: {file_name}. Content length: {len(file_content)}")
+        
         if isinstance(file_content, bytes):
             file_content = file_content.decode('utf-8')
         elif isinstance(file_content, str):
-            # If it's base64 encoded, decode it
             try:
                 file_content = base64.b64decode(file_content).decode('utf-8')
+                logger.info("Successfully decoded base64 content")
             except:
-                pass  # If it's not base64, keep the original string
+                logger.info("Content is not base64 encoded, using as-is")
         
-        logger.info(f"Text file processed successfully: {file_name}")
+        logger.info(f"Text file processed successfully: {file_name}. Processed length: {len(file_content[:2000])}")
         return {
             'type': 'text',
             'name': file_name,

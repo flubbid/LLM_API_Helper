@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 import logging
 import base64
 import time
+import json
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -97,6 +98,9 @@ class LLMService:
 
     def call_llm(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None) -> Optional[str]:
         try:
+            logger.info(f"Calling LLM with model: {self.current_model}")
+            logger.debug(f"Messages: {messages}")
+            logger.debug(f"Files: {files}")
             if assistant_id or self.current_model.startswith('gpt'):
                 return self.call_openai_assistant(messages, files, assistant_id)
             elif self.current_model.startswith('claude'):
@@ -124,16 +128,24 @@ class LLMService:
             # Add file content to the message
             file_content = "\n".join([f"File: {file['name']}\nContent: {file.get('text', '')}" for file in files])
             payload['messages'][-1]['content'] += f"\n\nAttached files:\n{file_content}"
-
         try:
             logger.info(f"Sending request to Claude API with payload: {payload}")
             response = requests.post(self.claude_api_url, json=payload, headers=headers)
             response.raise_for_status()
             logger.info("Successfully received response from Claude API")
-            return response.json()['content'][0]['text']
+            response_data = response.json()
+            
+            if 'content' in response_data and response_data['content']:
+                return response_data['content'][0]['text']
+            else:
+                logger.error(f"Unexpected response structure from Claude API: {response_data}")
+                return "I apologize, but I encountered an unexpected response. Please try again."
         except requests.RequestException as e:
             logger.error(f"Error calling Claude API: {e}", exc_info=True)
-            return None
+            return "I'm sorry, but I experienced an error while processing your request. Please try again later."
+        except (KeyError, IndexError) as e:
+            logger.error(f"Error parsing Claude API response: {e}", exc_info=True)
+            return "I apologize, but I had trouble understanding the response. Could you please rephrase your question?"
 
     def call_openai_assistant(self, messages, files=None, assistant_id=None):
         try:
@@ -148,8 +160,7 @@ class LLMService:
 
             thread_id = self._create_or_get_thread()
 
-            # Send only the new message to the thread
-            new_message = messages[-1]  # Get the last (newest) message
+            new_message = messages[-1]
             message_data = {
                 'role': new_message['role'],
                 'content': new_message['content']
@@ -157,44 +168,53 @@ class LLMService:
             if files:
                 message_data['file_ids'] = self.upload_files_to_openai(files)
             
+            logger.info(f"Sending message to OpenAI thread")
+            logger.debug(f"OpenAI message data: {json.dumps(message_data, indent=2)}")
+            
             message_url = f"{self.openai_threads_url}/{thread_id}/messages"
             response = requests.post(message_url, headers=headers, json=message_data)
             response.raise_for_status()
 
-            # Run the assistant
             run_url = f"{self.openai_threads_url}/{thread_id}/runs"
             run_data = {'assistant_id': assistant_id}
+            
+            logger.info(f"Running OpenAI assistant")
+            logger.debug(f"OpenAI run data: {json.dumps(run_data, indent=2)}")
+            
             response = requests.post(run_url, headers=headers, json=run_data)
             response.raise_for_status()
             run_id = response.json()['id']
 
-            # Wait for the run to complete
             while True:
                 status_url = f"{run_url}/{run_id}"
                 response = requests.get(status_url, headers=headers)
                 response.raise_for_status()
                 status = response.json()['status']
+                logger.info(f"OpenAI run status: {status}")
                 if status == 'completed':
                     break
                 elif status in ['failed', 'cancelled', 'expired']:
                     logger.error(f"OpenAI Assistant run failed with status: {status}")
                     return None
+                time.sleep(1)
 
-            # Retrieve the assistant's message
             messages_url = f"{self.openai_threads_url}/{thread_id}/messages"
             response = requests.get(messages_url, headers=headers)
             response.raise_for_status()
             assistant_message = response.json()['data'][0]['content'][0]['text']['value']
+            
+            logger.info("Successfully received response from OpenAI Assistant")
+            logger.debug(f"OpenAI Assistant response: {assistant_message}")
 
             return assistant_message
 
         except requests.RequestException as e:
-            logger.error(f"Error in OpenAI API call: {str(e)}")
+            logger.error(f"Error in OpenAI API call: {str(e)}", exc_info=True)
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in call_openai_assistant: {str(e)}")
+            logger.error(f"Unexpected error in call_openai_assistant: {str(e)}", exc_info=True)
             raise
-        
+
     def upload_files_to_openai(self, files: List[Dict]) -> List[str]:
         file_ids = []
         for file in files:
@@ -214,6 +234,7 @@ class LLMService:
             }
             try:
                 logger.info(f"Uploading file to OpenAI: {file['name']}")
+                logger.debug(f"File upload data: {json.dumps(data, indent=2)}")
                 response = requests.post(
                     self.openai_files_url,
                     headers={'Authorization': f'Bearer {self.openai_api_key}'},
