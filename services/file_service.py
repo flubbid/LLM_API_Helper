@@ -97,9 +97,9 @@ class FileService:
             except:
                 logger.info("Content is not base64 encoded, using as-is")
         
-        logger.info(f"Text file processed successfully: {file_name}. Processed length: {len(file_content[:2000])}")
+        logger.info(f"Text file processed successfully: {file_name}. Processed length: {len(file_content[:1000000])}")
         return {
             'type': 'text',
             'name': file_name,
-            'text': f"Content of {file_name}:\n{file_content[:2000]}"  # Limit to 2000 characters
+            'text': f"Content of {file_name}:\n{file_content[:1000000]}"  # Limit to 2000 characters
         }
