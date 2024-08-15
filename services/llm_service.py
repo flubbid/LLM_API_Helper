@@ -25,6 +25,7 @@ class LLMService:
             'claude-3-sonnet-20240229'
         ]
         self.current_model = 'claude-3-sonnet-20240229'
+        self.default_max_tokens = 4096
         self.openai_assistant_id = None
         self.openai_thread_id = None
         logger.info(f"Initial model set to: {self.current_model}")
@@ -96,15 +97,16 @@ class LLMService:
                 raise
         return self.openai_thread_id
 
-    def call_llm(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None) -> Optional[str]:
+    def call_llm(self, messages: List[Dict[str, str]], files: List[Dict] = None, assistant_id: str = None, max_tokens: int = None) -> Optional[str]:
         try:
             logger.info(f"Calling LLM with model: {self.current_model}")
             logger.debug(f"Messages: {messages}")
             logger.debug(f"Files: {files}")
+            logger.debug(f"Max tokens: {max_tokens}")
             if assistant_id or self.current_model.startswith('gpt'):
                 return self.call_openai_assistant(messages, files, assistant_id)
             elif self.current_model.startswith('claude'):
-                return self.call_claude(messages, files)
+                return self.call_claude(messages, files, max_tokens)
             else:
                 logger.error(f"Unknown model type: {self.current_model}")
                 raise ValueError(f"Unknown model type: {self.current_model}")
@@ -112,7 +114,7 @@ class LLMService:
             logger.error(f"Error during LLM call: {e}", exc_info=True)
             raise
 
-    def call_claude(self, messages: List[Dict[str, str]], files: List[Dict] = None, max_tokens: int = 1000) -> Optional[str]:
+    def call_claude(self, messages: List[Dict[str, str]], files: List[Dict] = None, max_tokens: int = None) -> Optional[str]:
         headers = {
             'Content-Type': 'application/json',
             'anthropic-version': '2023-06-01',
@@ -120,14 +122,10 @@ class LLMService:
         }
         payload = {
             'model': self.current_model,
-            'max_tokens': max_tokens,
+            'max_tokens': max_tokens or self.default_max_tokens,
             'messages': messages
         }
         
-        if files:
-            # Add file content to the message
-            file_content = "\n".join([f"File: {file['name']}\nContent: {file.get('text', '')}" for file in files])
-            payload['messages'][-1]['content'] += f"\n\nAttached files:\n{file_content}"
         try:
             logger.info(f"Sending request to Claude API with payload: {payload}")
             response = requests.post(self.claude_api_url, json=payload, headers=headers)
